@@ -218,6 +218,7 @@ int main(int argc, char* argv[]) {
     print_prompt();
     read_input(input_buffer);
 
+    // Metacommands, i.e., .exit
     if (input_buffer->buffer[0] == '.') {
       switch (do_meta_command(input_buffer)) {
         case (META_COMMAND_SUCCESS):
