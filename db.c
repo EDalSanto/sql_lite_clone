@@ -68,12 +68,28 @@ struct Table_t {
 };
 typedef struct Table_t Table;
 
+struct Cursor_t {
+  Table* table;
+  uint32_t row_num;
+  bool end_of_table;
+};
+typedef struct Cursor_t Cursor;
+
 struct InputBuffer_t {
   char* buffer;
   size_t buffer_length;
   ssize_t input_length;
 };
 typedef struct InputBuffer_t InputBuffer;
+
+enum PrepareResult_t {
+  PREPARE_SUCCESS,
+  PREPARE_NEGATIVE_ID,
+  PREPARE_STRING_TOO_LONG,
+  PREPARE_SYNTAX_ERROR,
+  PREPARE_UNRECOGNIZED_STATEMENT
+};
+typedef enum PrepareResult_t PrepareResult;
 
 InputBuffer* new_input_buffer() {
   InputBuffer* input_buffer = malloc(sizeof(InputBuffer));
@@ -85,6 +101,10 @@ InputBuffer* new_input_buffer() {
 }
 
 void print_prompt() { printf("db > "); }
+
+void print_row(Row* row) {
+  printf("(%d %s %s)\n", row->id, row->username, row->email);
+}
 
 // Writes to input buffer from stdin
 void read_input(InputBuffer* input_buffer) {
@@ -100,15 +120,6 @@ void read_input(InputBuffer* input_buffer) {
   input_buffer->input_length = bytes_read - 1;
   input_buffer->buffer[bytes_read - 1] = 0;
 }
-
-enum PrepareResult_t {
-  PREPARE_SUCCESS,
-  PREPARE_NEGATIVE_ID,
-  PREPARE_STRING_TOO_LONG,
-  PREPARE_SYNTAX_ERROR,
-  PREPARE_UNRECOGNIZED_STATEMENT
-};
-typedef enum PrepareResult_t PrepareResult;
 
 void pager_flush(Pager* pager, uint32_t page_num, uint32_t size) {
   if (pager->pages[page_num] == NULL) {
@@ -170,15 +181,6 @@ Table* db_close(Table* table) {
     }
   }
   free(pager);
-}
-
-MetaCommandResult do_meta_command(InputBuffer* input_buffer, Table* table) {
-  if (strcmp(input_buffer->buffer, ".exit") == 0) {
-    db_close(table);
-    exit(EXIT_SUCCESS);
-  } else {
-    return META_COMMAND_UNRECOGNIZED_COMMAND;
-  }
 }
 
 // convert to serialized compact representation of a row
@@ -264,12 +266,38 @@ void* get_page(Pager* pager, uint32_t page_num) {
 }
 
 // where to read/write memory
-void* row_slot(Table* table, uint32_t row_num) {
+void* cursor_value(Cursor* cursor) {
+  uint32_t row_num = cursor->row_num;
   uint32_t page_num = row_num / ROWS_PER_PAGE;
-  void* page = get_page(table->pager, page_num);
+  void* page = get_page(cursor->table->pager, page_num);
   uint32_t row_offset = row_num % ROWS_PER_PAGE;
   uint32_t byte_offset = row_offset * ROW_SIZE;
   return page + byte_offset;
+}
+
+Cursor* table_end(Table* table) {
+  Cursor* cursor = malloc(sizeof(Cursor));
+  cursor->table = table;
+  cursor->row_num = table->num_rows;
+  cursor->end_of_table = true;
+
+  return cursor;
+}
+
+Cursor* table_start(Table* table) {
+  Cursor* cursor = malloc(sizeof(Cursor));
+  cursor->table = table;
+  cursor->row_num = 0;
+  cursor->end_of_table = (table->num_rows == 0);
+
+  return cursor;
+}
+
+void cursor_advance(Cursor* cursor) {
+  cursor->row_num++;
+  if (cursor->row_num >= cursor->table->num_rows) {
+    cursor->end_of_table = true;
+  }
 }
 
 PrepareResult prepare_insert(InputBuffer* input_buffer, Statement* statement) {
@@ -321,23 +349,28 @@ ExecuteResult execute_insert(Statement* statement, Table* table) {
   }
 
   Row* row_to_insert = &(statement->row_to_insert);
+  Cursor* cursor = table_end(table);
 
-  serialize_row(row_to_insert, row_slot(table, table->num_rows));
+  serialize_row(row_to_insert, cursor_value(cursor));
   table->num_rows += 1;
+
+  free(cursor);
 
   return EXECUTE_SUCCESS;
 }
 
-void print_row(Row* row) {
-  printf("(%d %s %s)\n", row->id, row->username, row->email);
-}
-
 ExecuteResult execute_select(Statement* statement, Table* table) {
+  Cursor* cursor = table_start(table);
   Row row;
-  for (uint32_t i = 0; i < table->num_rows; i++) {
-    deserialize_row(row_slot(table, i), &row);
+
+  while (!(cursor->end_of_table)) {
+    deserialize_row(cursor_value(cursor), &row);
     print_row(&row);
+    cursor_advance(cursor);
   }
+
+  free(cursor);
+
   return EXECUTE_SUCCESS;
 }
 
@@ -347,6 +380,15 @@ ExecuteResult execute_statement(Statement* statement, Table* table) {
       return execute_insert(statement, table);
     case (STATEMENT_SELECT):
       return execute_select(statement, table);
+  }
+}
+
+MetaCommandResult do_meta_command(InputBuffer* input_buffer, Table* table) {
+  if (strcmp(input_buffer->buffer, ".exit") == 0) {
+    db_close(table);
+    exit(EXIT_SUCCESS);
+  } else {
+    return META_COMMAND_UNRECOGNIZED_COMMAND;
   }
 }
 

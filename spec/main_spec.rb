@@ -1,7 +1,7 @@
 require 'pry'
 
 describe 'database' do
-  before do
+  after(:each) do
     `rm -rf test.db`
   end
 
