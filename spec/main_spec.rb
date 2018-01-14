@@ -8,14 +8,17 @@ describe 'database' do
   # TODO understand this
   def run_script(commands)
     raw_output = nil
+    # popen => runs specified command as subprocess
+    # with block => ruby runs comands as a child connected to Ruby with a pipe
+      # Ruby's end of the pipe passed as a param to the block
     IO.popen("./db test.db", "r+") do |pipe|
       commands.each do |command|
-        pipe.puts command
+        pipe.puts command # Writes command to stream
       end
 
       pipe.close_write
 
-      # Read entire output
+      # Read entire output from db
       raw_output = pipe.gets(nil)
     end
     raw_output.split("\n")
@@ -107,6 +110,46 @@ describe 'database' do
     expect(result2).to match_array([
       "db > (1 user1 person@example.com)",
       "Executed.",
+      "db > "
+    ])
+  end
+
+  it 'prints constants' do
+    script = [
+      ".constants",
+      ".exit",
+    ]
+    result = run_script(script)
+
+    expect(result).to match_array([
+      "db > Constants:",
+      "ROW_SIZE: 293",
+      "COMMON_NODE_HEADER_SIZE: 6",
+      "LEAF_NODE_HEADER_SIZE: 10",
+      "LEAF_NODE_CELL_SIZE: 297",
+      "LEAF_NODE_SPACE_FOR_CELLS: 4086",
+      "LEAF_NODE_MAX_CELLS: 13",
+      "db > ",
+    ])
+  end
+
+  it 'allows printing out the structure of a 1 node b-tree' do
+    script = [3, 2, 1].map do |i|
+      "insert #{i} user#{i} person#{i}@example.com"
+    end
+    script << ".btree"
+    script << ".exit"
+    result = run_script(script)
+
+    expect(result).to match_array([
+      "db > Executed.",
+      "db > Executed.",
+      "db > Executed.",
+      "db > Tree:",
+      "leaf (size 3)",
+      "  - 0 : 1",
+      "  - 1 : 2",
+      "  - 2 : 3",
       "db > "
     ])
   end
