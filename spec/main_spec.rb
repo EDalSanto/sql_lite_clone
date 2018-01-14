@@ -1,10 +1,14 @@
 require 'pry'
 
 describe 'database' do
+  before do
+    `rm -rf test.db`
+  end
+
   # TODO understand this
   def run_script(commands)
     raw_output = nil
-    IO.popen("./db", "r+") do |pipe|
+    IO.popen("./db test.db", "r+") do |pipe|
       commands.each do |command|
         pipe.puts command
       end
@@ -25,7 +29,7 @@ describe 'database' do
     ])
     expect(result).to match_array([
       "db > Executed.",
-      "db > (1, user1, person1@example.com)",
+      "db > (1 user1 person1@example.com)",
       "Executed.",
       "db > ",
     ])
@@ -51,7 +55,7 @@ describe 'database' do
     result = run_script(script)
     expect(result).to match_array([
       "db > Executed.",
-      "db > (1, #{long_username}, #{long_email})",
+      "db > (1 #{long_username} #{long_email})",
       "Executed.",
       "db > ",
     ])
