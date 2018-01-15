@@ -13,7 +13,11 @@ describe 'database' do
       # Ruby's end of the pipe passed as a param to the block
     IO.popen("./db test.db", "r+") do |pipe|
       commands.each do |command|
-        pipe.puts command # Writes command to stream
+        begin
+          pipe.puts command # Writes command to stream
+        rescue Errno::EPIPE
+          break
+        end
       end
 
       pipe.close_write
@@ -44,7 +48,10 @@ describe 'database' do
     end
     script << ".exit"
     result = run_script(script)
-    expect(result[-2]).to eq('db > Error: Table full.')
+    expect(result.last(2)).to match_array([
+      "db > Executed.",
+      "db > Need to implement updating parent after split."
+    ])
   end
 
   it 'allows inserting strings that are the maximum length' do
@@ -125,9 +132,9 @@ describe 'database' do
       "db > Constants:",
       "ROW_SIZE: 293",
       "COMMON_NODE_HEADER_SIZE: 6",
-      "LEAF_NODE_HEADER_SIZE: 10",
+      "LEAF_NODE_HEADER_SIZE: 14",
       "LEAF_NODE_CELL_SIZE: 297",
-      "LEAF_NODE_SPACE_FOR_CELLS: 4086",
+      "LEAF_NODE_SPACE_FOR_CELLS: 4082",
       "LEAF_NODE_MAX_CELLS: 13",
       "db > ",
     ])
@@ -183,7 +190,8 @@ describe 'database' do
       "    - 12",
       "    - 13",
       "    - 14",
-      "db > Need to implement searching an internal node",
+      "db > Executed.",
+      "db > "
     ])
   end
 end
